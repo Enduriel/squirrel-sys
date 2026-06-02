@@ -10,6 +10,9 @@ homepage = "https://github.com/robbym/squirrel-sys"
 build = "build.rs"
 edition = "2018"
 
+[features]
+double = []
+
 [build-dependencies]
 bindgen = "0.52.0"
 cmake = "0.1.42"
