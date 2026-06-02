@@ -1,3 +1,4 @@
 [submodule "squirrel"]
 	path = squirrel
-	url = https://github.com/albertodemichelis/squirrel.git
+	url = https://github.com/Enduriel/squirrel.git
+	branch = bb-f32-math-master

@@ -31,7 +31,13 @@ fn get_cpp_link_stdlib() -> Option<String> {
 }
 
 fn main() {
-    let dst = cmake::build("squirrel");
+    let double = env::var_os("CARGO_FEATURE_DOUBLE").is_some();
+
+    let mut config = cmake::Config::new("squirrel");
+    if double {
+        config.cxxflag("-DSQUSEDOUBLE");
+    }
+    let dst = config.build();
 
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
     println!("cargo:rustc-link-lib=static=squirrel_static");
@@ -39,8 +45,11 @@ fn main() {
         println!("cargo:rustc-flags=-l dylib={}", stdlib);
     }
 
-    let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
+    let mut builder = bindgen::Builder::default().header("wrapper.h");
+    if double {
+        builder = builder.clang_arg("-DSQUSEDOUBLE");
+    }
+    let bindings = builder
         .trust_clang_mangling(false)
         .generate()
         .expect("Unable to generate bindings");
@@ -50,4 +59,3 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 }
-
