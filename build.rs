@@ -30,8 +30,37 @@ fn get_cpp_link_stdlib() -> Option<String> {
     }
 }
 
+/// FNV-1a over every VM source file (in path order) and the build options. It changes
+/// whenever the VM or its compiler does, so a cache of compiled scripts can key on it
+/// (exposed as `SQUIRREL_SOURCE_HASH`).
+fn source_hash(double: bool) -> u64 {
+    let mut files = Vec::new();
+    for dir in ["squirrel/include", "squirrel/squirrel", "squirrel/sqstdlib"] {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if matches!(path.extension().and_then(|e| e.to_str()), Some("h" | "cpp")) {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for &b in bytes {
+            hash = (hash ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    for file in files {
+        eat(file.to_string_lossy().as_bytes());
+        eat(&std::fs::read(&file).unwrap_or_default());
+    }
+    eat(&[u8::from(double)]);
+    hash
+}
+
 fn main() {
     let double = env::var_os("CARGO_FEATURE_DOUBLE").is_some();
+    println!("cargo:rustc-env=SQUIRREL_SOURCE_HASH={:016x}", source_hash(double));
 
     let mut config = cmake::Config::new("squirrel");
     // Only the static libraries are linked: skip the shared ones and the `sq`
