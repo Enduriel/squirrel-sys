@@ -34,6 +34,13 @@ fn main() {
     let double = env::var_os("CARGO_FEATURE_DOUBLE").is_some();
 
     let mut config = cmake::Config::new("squirrel");
+    // Only the static libraries are linked: skip the shared ones and the `sq`
+    // interpreter, and pin the install dir (GNUInstallDirs picks lib64 on some
+    // distros) to the one searched below.
+    config
+        .define("DISABLE_DYNAMIC", "ON")
+        .define("SQ_DISABLE_INTERPRETER", "ON")
+        .define("CMAKE_INSTALL_LIBDIR", "lib");
     if double {
         config.cxxflag("-DSQUSEDOUBLE");
     }
