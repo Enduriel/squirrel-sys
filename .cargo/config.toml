@@ -1,0 +1,7 @@
+# squirrel-sys 0.2.1 vendors squirrel's CMakeLists.txt with
+# `cmake_minimum_required(VERSION 3.4)`. CMake 4.x dropped compatibility with
+# CMake < 3.5, so configuring the bundled C library fails. CMake (>= 3.31)
+# reads this env var as the default minimum policy version, letting the old
+# project configure. Remove once squirrel-sys ships a CMakeLists with >= 3.5.
+[env]
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

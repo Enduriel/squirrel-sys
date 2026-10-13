@@ -37,9 +37,25 @@ fn main() {
     if double {
         config.cxxflag("-DSQUSEDOUBLE");
     }
+    // SQ_ASAN=1: instrument the C++ with AddressSanitizer (for debugging memory
+    // errors in the VM). The binary must also link asan
+    // (RUSTFLAGS="-Clink-arg=-fsanitize=address").
+    if env::var_os("SQ_ASAN").is_some() {
+        config
+            .cflag("-fsanitize=address")
+            .cflag("-fno-omit-frame-pointer")
+            .cflag("-g")
+            .cxxflag("-fsanitize=address")
+            .cxxflag("-fno-omit-frame-pointer")
+            .cxxflag("-g")
+            .define("CMAKE_BUILD_TYPE", "Debug");
+    }
     let dst = config.build();
 
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
+    // sqstdlib (string/math/regexp stdlib) depends on the core VM, so it is listed
+    // first — the linker resolves symbols left-to-right.
+    println!("cargo:rustc-link-lib=static=sqstdlib_static");
     println!("cargo:rustc-link-lib=static=squirrel_static");
     if let Some(stdlib) = get_cpp_link_stdlib() {
         println!("cargo:rustc-flags=-l dylib={}", stdlib);
