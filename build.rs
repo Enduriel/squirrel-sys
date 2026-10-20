@@ -73,6 +73,23 @@ fn main() {
     if double {
         config.cxxflag("-DSQUSEDOUBLE");
     }
+    let target = env::var("TARGET").unwrap();
+    if !target.contains("msvc") {
+        // Float results must be the same on every platform (seed-exact scripts): no
+        // fused multiply-adds, which clang forms by default where the CPU has them
+        // (ARM64). And the VM type-puns (e.g. a float read from an instruction's int
+        // slot), which squirrel's CMakeLists guards with -fno-strict-aliasing for GCC
+        // only; clang needs it too.
+        for flag in ["-ffp-contract=off", "-fno-strict-aliasing"] {
+            config.cflag(flag).cxxflag(flag);
+        }
+    }
+    if target.contains("apple") {
+        // Build for the macOS version rustc links for (its default is 11.0), not the
+        // SDK's, which the linker warns about for every object.
+        let version = env::var("MACOSX_DEPLOYMENT_TARGET").unwrap_or_else(|_| "11.0".to_string());
+        config.define("CMAKE_OSX_DEPLOYMENT_TARGET", version);
+    }
     // SQ_ASAN=1: instrument the C++ with AddressSanitizer (for debugging memory
     // errors in the VM). The binary must also link asan
     // (RUSTFLAGS="-Clink-arg=-fsanitize=address").
