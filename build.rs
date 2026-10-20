@@ -73,6 +73,9 @@ fn main() {
     if double {
         config.cxxflag("-DSQUSEDOUBLE");
     }
+    if env::var_os("CARGO_FEATURE_CENSUS").is_some() {
+        config.cxxflag("-DSQ_CENSUS");
+    }
     let target = env::var("TARGET").unwrap();
     if !target.contains("msvc") {
         // Float results must be the same on every platform (seed-exact scripts): no

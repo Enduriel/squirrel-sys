@@ -12,6 +12,9 @@ edition = "2018"
 
 [features]
 double = []
+# The heap census's access tracking (sq_censustrack): measurement builds only, since it
+# hooks every table access. Without it sq_censustrack does nothing.
+census = []
 
 [build-dependencies]
 bindgen = "0.52.0"
