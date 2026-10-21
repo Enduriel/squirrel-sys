@@ -5,7 +5,8 @@ use std::env;
 use std::path::PathBuf;
 
 /// Returns the default C++ standard library for the current target: `libc++`
-/// for OS X and `libstdc++` for anything else.
+/// for OS X and for `*-windows-gnullvm` (the llvm-mingw toolchain has no libstdc++),
+/// and `libstdc++` for anything else.
 ///
 /// Credits: cc-rs crate
 fn get_cpp_link_stdlib() -> Option<String> {
@@ -20,6 +21,7 @@ fn get_cpp_link_stdlib() -> Option<String> {
         if target.contains("msvc") {
             None
         } else if target.contains("apple")
+            || target.ends_with("-windows-gnullvm")
             || target.contains("freebsd")
             || target.contains("openbsd")
         {
@@ -114,10 +116,25 @@ fn main() {
     println!("cargo:rustc-link-lib=static=sqstdlib_static");
     println!("cargo:rustc-link-lib=static=squirrel_static");
     if let Some(stdlib) = get_cpp_link_stdlib() {
-        println!("cargo:rustc-flags=-l dylib={}", stdlib);
+        // A static C runtime (`-C target-feature=+crt-static`) on windows-gnullvm links
+        // llvm-mingw's libc++ in too, so the program needs no libc++.dll beside it.
+        let crt_static = env::var("CARGO_CFG_TARGET_FEATURE")
+            .is_ok_and(|features| features.split(',').any(|f| f == "crt-static"));
+        // Not bundled into this crate's rlib: the final link finds it in the toolchain.
+        let kind = if crt_static && target.ends_with("-windows-gnullvm") {
+            "static:-bundle"
+        } else {
+            "dylib"
+        };
+        println!("cargo:rustc-flags=-l {}={}", kind, stdlib);
     }
 
     let mut builder = bindgen::Builder::default().header("wrapper.h");
+    if let Some(arch) = target.strip_suffix("-pc-windows-gnullvm") {
+        // bindgen hands rustc's triple to libclang, which can't parse `gnullvm`; the
+        // same ABI is clang's `w64-windows-gnu`.
+        builder = builder.clang_arg(format!("--target={arch}-w64-windows-gnu"));
+    }
     if double {
         builder = builder.clang_arg("-DSQUSEDOUBLE");
     }
