@@ -60,6 +60,20 @@ fn source_hash(double: bool) -> u64 {
     hash
 }
 
+/// Whether the C/C++ compiler for an msvc `target` is clang-cl (else MSVC's cl): the
+/// compiler variables cc-rs (and so cmake-rs) reads, most specific first.
+fn clang_cl(target: &str) -> bool {
+    let vars = [
+        format!("CXX_{target}"),
+        format!("CXX_{}", target.replace('-', "_")),
+        "TARGET_CXX".to_string(),
+        "CXX".to_string(),
+    ];
+    vars.iter()
+        .find_map(|var| env::var(var).ok())
+        .is_some_and(|cxx| cxx.contains("clang-cl"))
+}
+
 fn main() {
     let double = env::var_os("CARGO_FEATURE_DOUBLE").is_some();
     println!("cargo:rustc-env=SQUIRREL_SOURCE_HASH={:016x}", source_hash(double));
@@ -79,15 +93,35 @@ fn main() {
         config.cxxflag("-DSQ_CENSUS");
     }
     let target = env::var("TARGET").unwrap();
-    if !target.contains("msvc") {
-        // Float results must be the same on every platform (seed-exact scripts): no
-        // fused multiply-adds, which clang forms by default where the CPU has them
-        // (ARM64). And the VM type-puns (e.g. a float read from an instruction's int
-        // slot), which squirrel's CMakeLists guards with -fno-strict-aliasing for GCC
-        // only; clang needs it too.
-        for flag in ["-ffp-contract=off", "-fno-strict-aliasing"] {
-            config.cflag(flag).cxxflag(flag);
-        }
+    let crt_static = env::var("CARGO_CFG_TARGET_FEATURE")
+        .is_ok_and(|features| features.split(',').any(|f| f == "crt-static"));
+    // Float results must be the same on every platform (seed-exact scripts): no fused
+    // multiply-adds, which clang forms by default where the CPU has them (ARM64). And
+    // the VM type-puns (e.g. a float read from an instruction's int slot), which
+    // squirrel's CMakeLists guards with -fno-strict-aliasing for GCC only; clang needs
+    // it too.
+    let flags: &[&str] = if !target.contains("msvc") {
+        &["-ffp-contract=off", "-fno-strict-aliasing"]
+    } else if clang_cl(&target) {
+        // clang-cl (cross builds, cargo-xwin) takes clang's own flags behind `/clang:`.
+        &["/clang:-ffp-contract=off", "/clang:-fno-strict-aliasing"]
+    } else {
+        // MSVC's cl doesn't contract under /fp:precise since VS 2022 17.0 (only with
+        // /fp:contract), and has no type-based alias analysis.
+        &["/fp:precise"]
+    };
+    for flag in flags {
+        config.cflag(flag).cxxflag(flag);
+    }
+    if target.contains("msvc") {
+        // The C runtime Rust links: the static one under `+crt-static`. CMake's
+        // `CMAKE_MSVC_RUNTIME_LIBRARY` needs its policy CMP0091, newer than the
+        // CMakeLists' minimum version; without it CMake puts /MD in its release flags
+        // and the link mixes two runtimes.
+        let runtime = if crt_static { "MultiThreaded" } else { "MultiThreadedDLL" };
+        config
+            .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
+            .define("CMAKE_MSVC_RUNTIME_LIBRARY", runtime);
     }
     if target.contains("apple") {
         // Build for the macOS version rustc links for (its default is 11.0), not the
@@ -118,8 +152,6 @@ fn main() {
     if let Some(stdlib) = get_cpp_link_stdlib() {
         // A static C runtime (`-C target-feature=+crt-static`) on windows-gnullvm links
         // llvm-mingw's libc++ in too, so the program needs no libc++.dll beside it.
-        let crt_static = env::var("CARGO_CFG_TARGET_FEATURE")
-            .is_ok_and(|features| features.split(',').any(|f| f == "crt-static"));
         // Not bundled into this crate's rlib: the final link finds it in the toolchain.
         let kind = if crt_static && target.ends_with("-windows-gnullvm") {
             "static:-bundle"
